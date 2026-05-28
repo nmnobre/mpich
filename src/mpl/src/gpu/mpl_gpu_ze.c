@@ -2106,7 +2106,7 @@ bool MPL_gpu_ipc_handle_is_valid(MPL_gpu_ipc_mem_handle_t * handle, void *ptr)
     ret = zeMemGetAllocProperties(ze_context, ptr, &ptr_attr, &device);
     assert(ret == ZE_RESULT_SUCCESS);
 
-    return handle->data.mem_id == ptr_attr.id;
+    return ptr_attr.id == handle->data.mem_id;
 }
 
 /* at finalize, to free a cache entry in ipc_cache_removal cache */

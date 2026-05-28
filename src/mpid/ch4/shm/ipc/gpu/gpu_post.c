@@ -180,7 +180,8 @@ static int ipc_track_cache_remove(const void *addr)
 /* -- mapped_track_tree -- */
 
 static int ipc_mapped_cache_search(const void *remote_addr, int remote_rank, int device_id,
-                                   void **mapped_base_addr_out)
+                                   void **mapped_base_addr_out,
+                                   MPL_gpu_buffer_id_t * mapped_remote_buffer_id)
 {
     struct MPIDI_GPUI_map_cache_entry *entry;
     struct map_key key;
@@ -193,17 +194,20 @@ static int ipc_mapped_cache_search(const void *remote_addr, int remote_rank, int
     if (entry) {
         MPL_DBG_MSG_P(MPIDI_CH4_DBG_IPC, VERBOSE, "mapped gpu ipc handle cache HIT for %p",
                       remote_addr);
-        *mapped_base_addr_out = (void *) entry->mapped_addrs[device_id];
+        *mapped_base_addr_out = (void *) entry->mapped[device_id].local_base_address;
+        *mapped_remote_buffer_id = entry->mapped[device_id].remote_buffer_id;
     } else {
         MPL_DBG_MSG_P(MPIDI_CH4_DBG_IPC, VERBOSE, "mapped gpu ipc handle MISS for %p", remote_addr);
         *mapped_base_addr_out = NULL;
+        *mapped_remote_buffer_id = 0;
     }
 
     return MPI_SUCCESS;
 }
 
 static int ipc_mapped_cache_insert(const void *remote_addr, int remote_rank, int device_id,
-                                   const void *mapped_base_addr)
+                                   const void *mapped_base_addr,
+                                   MPL_gpu_buffer_id_t mapped_remote_buffer_id)
 {
     int mpi_errno = MPI_SUCCESS;
 
@@ -218,16 +222,18 @@ static int ipc_mapped_cache_insert(const void *remote_addr, int remote_rank, int
     HASH_FIND(hh, MPIDI_GPUI_global.ipc_map_cache, &key, sizeof(struct map_key), entry);
 
     if (entry) {
-        entry->mapped_addrs[device_id] = mapped_base_addr;
+        entry->mapped[device_id].local_base_address = mapped_base_addr;
+        entry->mapped[device_id].remote_buffer_id = mapped_remote_buffer_id;
     } else {
         /* create and add new entry */
         int entry_size = sizeof(struct MPIDI_GPUI_map_cache_entry) +
-            (MPIDI_GPUI_global.local_device_count * sizeof(void *));
+            (MPIDI_GPUI_global.local_device_count * sizeof(struct map_data));
         entry = MPL_malloc(entry_size, MPL_MEM_OTHER);
         memset(entry, 0, entry_size);
         entry->key.remote_rank = remote_rank;
         entry->key.remote_addr = remote_addr;
-        entry->mapped_addrs[device_id] = mapped_base_addr;
+        entry->mapped[device_id].local_base_address = mapped_base_addr;
+        entry->mapped[device_id].remote_buffer_id = mapped_remote_buffer_id;
         HASH_ADD(hh, MPIDI_GPUI_global.ipc_map_cache, key, sizeof(struct map_key), entry,
                  MPL_MEM_SHM);
     }
@@ -252,8 +258,8 @@ static int ipc_mapped_cache_delete(const void *remote_addr, int remote_rank)
     if (entry) {
         HASH_DEL(MPIDI_GPUI_global.ipc_map_cache, entry);
         for (int i = 0; i < MPIDI_GPUI_global.local_device_count; i++) {
-            if (entry->mapped_addrs[i]) {
-                int mpl_err = MPL_gpu_ipc_handle_unmap((void *) entry->mapped_addrs[i]);
+            if (entry->mapped[i].local_base_address) {
+                int mpl_err = MPL_gpu_ipc_handle_unmap((void *) entry->mapped[i].local_base_address);
                 MPIR_ERR_CHKANDJUMP(mpl_err != MPL_SUCCESS, mpi_errno, MPI_ERR_OTHER,
                                     "**gpu_ipc_handle_unmap");
             }
@@ -484,17 +490,31 @@ int MPIDI_GPU_ipc_handle_map(MPIDI_GPU_ipc_handle_t handle, int map_dev_id, void
         MPIR_ERR_CHECK(mpi_errno);
     }
 
+#ifdef MPL_HAVE_ZE
+    MPL_gpu_buffer_id_t incoming_remote_buffer_id = handle.ipc_handle.data.mem_id;
+#else
+    MPL_gpu_buffer_id_t incoming_remote_buffer_id = handle.ipc_handle.id;
+#endif
+
     void *pbase = NULL;
     if (need_cache) {
+        MPL_gpu_buffer_id_t cached_remote_buffer_id;
         mpi_errno =
             ipc_mapped_cache_search((void *) handle.remote_base_addr, handle.node_rank, map_dev_id,
-                                    &pbase);
+                                    &pbase, &cached_remote_buffer_id);
         MPIR_ERR_CHECK(mpi_errno);
 
         if (pbase) {
-            /* found in cache */
-            *vaddr = (void *) ((char *) pbase + handle.offset);
-            goto fn_exit;
+            /* found the base address in cache, check the buffer id */
+            if (cached_remote_buffer_id == incoming_remote_buffer_id) {
+                /* found an allocation w/ the same base address and buffer id in the cache */
+                *vaddr = (void *) ((char *) pbase + handle.offset);
+                goto fn_exit;
+            }
+            /* otherwise, we need to unmap to remap below */
+            int mpl_err = MPL_gpu_ipc_handle_unmap(pbase);
+            MPIR_ERR_CHKANDJUMP(mpl_err != MPL_SUCCESS, mpi_errno, MPI_ERR_OTHER,
+                                "**gpu_ipc_handle_unmap");
         }
     }
 
@@ -516,7 +536,7 @@ int MPIDI_GPU_ipc_handle_map(MPIDI_GPU_ipc_handle_t handle, int map_dev_id, void
     if (need_cache) {
         mpi_errno =
             ipc_mapped_cache_insert((void *) handle.remote_base_addr, handle.node_rank, map_dev_id,
-                                    pbase);
+                                    pbase, incoming_remote_buffer_id);
         MPIR_ERR_CHECK(mpi_errno);
     }
 

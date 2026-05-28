@@ -88,8 +88,9 @@ int MPIDI_GPU_mpi_finalize_hook(void)
         HASH_ITER(hh, MPIDI_GPUI_global.ipc_map_cache, entry, tmp) {
             HASH_DEL(MPIDI_GPUI_global.ipc_map_cache, entry);
             for (int i = 0; i < MPIDI_GPUI_global.local_device_count; i++) {
-                if (entry->mapped_addrs[i]) {
-                    int mpl_err = MPL_gpu_ipc_handle_unmap((void *) entry->mapped_addrs[i]);
+                if (entry->mapped[i].local_base_address) {
+                    int mpl_err =
+                        MPL_gpu_ipc_handle_unmap((void *) entry->mapped[i].local_base_address);
                     MPIR_ERR_CHKANDJUMP(mpl_err != MPL_SUCCESS, mpi_errno, MPI_ERR_OTHER,
                                         "**gpu_ipc_handle_unmap");
                 }
