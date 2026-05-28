@@ -492,9 +492,22 @@ int MPIDI_GPU_ipc_handle_map(MPIDI_GPU_ipc_handle_t handle, int map_dev_id, void
         MPIR_ERR_CHECK(mpi_errno);
 
         if (pbase) {
-            /* found in cache */
-            *vaddr = (void *) ((char *) pbase + handle.offset);
-            goto fn_exit;
+            /* found the base address in cache, check the old allocation was the same size */
+            void *bounds_base;
+            uintptr_t bounds_len;
+            int mpl_err = MPL_gpu_get_buffer_bounds(pbase, &bounds_base, &bounds_len);
+            MPIR_ERR_CHKANDJUMP(mpl_err != MPL_SUCCESS, mpi_errno, MPI_ERR_OTHER,
+                                "**gpu_get_buffer_bounds");
+            MPIR_Assert(pbase == bounds_base);
+            if (handle.len == bounds_len) {
+                /* found an allocation w/ the same base address and size in the cache */
+                *vaddr = (void *) ((char *) pbase + handle.offset);
+                goto fn_exit;
+            }
+            /* otherwise, we need to unmap to remap below */
+            mpl_err = MPL_gpu_ipc_handle_unmap(pbase);
+            MPIR_ERR_CHKANDJUMP(mpl_err != MPL_SUCCESS, mpi_errno, MPI_ERR_OTHER,
+                                "**gpu_ipc_handle_unmap");
         }
     }
 
