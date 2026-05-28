@@ -191,15 +191,20 @@ int MPL_gpu_ipc_handle_unmap(void *ptr)
     goto fn_exit;
 }
 
+MPL_gpu_buffer_id_t MPL_gpu_ipc_handle_id(MPL_gpu_ipc_mem_handle_t * handle)
+{
+    return handle->id;
+}
+
 bool MPL_gpu_ipc_handle_is_valid(MPL_gpu_ipc_mem_handle_t * handle, void *ptr)
 {
     CUresult ret;
-    unsigned long long buffer_id;
+    MPL_gpu_buffer_id_t buffer_id;
 
     ret = cuPointerGetAttribute(&buffer_id, CU_POINTER_ATTRIBUTE_BUFFER_ID, (CUdeviceptr) ptr);
     assert(ret == cudaSuccess);
 
-    return buffer_id == handle->id;
+    return buffer_id == MPL_gpu_ipc_handle_id(handle);
 }
 
 int MPL_gpu_malloc_host(void **ptr, size_t size)

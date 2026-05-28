@@ -2091,6 +2091,11 @@ int MPL_gpu_ipc_handle_unmap(void *ptr)
     goto fn_exit;
 }
 
+MPL_gpu_buffer_id_t MPL_gpu_ipc_handle_id(MPL_gpu_ipc_mem_handle_t * handle)
+{
+    return handle->data.mem_id;
+}
+
 bool MPL_gpu_ipc_handle_is_valid(MPL_gpu_ipc_mem_handle_t * handle, void *ptr)
 {
     ze_result_t ret;
@@ -2106,7 +2111,7 @@ bool MPL_gpu_ipc_handle_is_valid(MPL_gpu_ipc_mem_handle_t * handle, void *ptr)
     ret = zeMemGetAllocProperties(ze_context, ptr, &ptr_attr, &device);
     assert(ret == ZE_RESULT_SUCCESS);
 
-    return handle->data.mem_id == ptr_attr.id;
+    return ptr_attr.id == MPL_gpu_ipc_handle_id(handle);
 }
 
 /* at finalize, to free a cache entry in ipc_cache_removal cache */

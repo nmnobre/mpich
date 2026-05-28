@@ -14,7 +14,10 @@ struct MPIDI_GPUI_map_cache_entry {
         int remote_rank;
         const void *remote_addr;
     } key;
-    const void *mapped_addrs[]; /* array of base addresses indexed by device id */
+    struct map_data {
+        const void * local_base_address;
+        MPL_gpu_buffer_id_t remote_buffer_id;
+    } mapped[]; /* array of local base addresses and remote buffer ids indexed by device id */
 };
 
 struct MPIDI_GPUI_handle_cache_entry {
