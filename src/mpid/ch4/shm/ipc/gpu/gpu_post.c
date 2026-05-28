@@ -373,7 +373,6 @@ int MPIDI_GPU_fill_ipc_handle(MPIDI_IPCI_ipc_attr_t * ipc_attr,
         (MPIR_CVAR_CH4_IPC_GPU_HANDLE_CACHE == MPIR_CVAR_CH4_IPC_GPU_HANDLE_CACHE_generic);
 
     MPL_gpu_ipc_mem_handle_t handle;
-    int handle_status;
     if (need_cache) {
         bool found = false;
         mpi_errno = ipc_track_cache_search(pbase, &handle, &found);
@@ -381,7 +380,6 @@ int MPIDI_GPU_fill_ipc_handle(MPIDI_IPCI_ipc_attr_t * ipc_attr,
 
         if (found) {
             if (MPL_gpu_ipc_handle_is_valid(&handle, pbase)) {
-                handle_status = MPIDI_GPU_IPC_HANDLE_VALID;
                 goto fn_done;
             } else {
                 /* remove and destroy invalid handle */
@@ -402,7 +400,6 @@ int MPIDI_GPU_fill_ipc_handle(MPIDI_IPCI_ipc_attr_t * ipc_attr,
         mpi_errno = ipc_track_cache_insert(pbase, handle);
         MPIR_ERR_CHECK(mpi_errno);
     }
-    handle_status = MPIDI_GPU_IPC_HANDLE_REMAP_REQUIRED;
 
   fn_done:
     /* MPIDI_GPU_get_ipc_attr will be called by sender to create an ipc handle.
@@ -417,7 +414,6 @@ int MPIDI_GPU_fill_ipc_handle(MPIDI_IPCI_ipc_attr_t * ipc_attr,
     ipc_handle->gpu.len = len;
     ipc_handle->gpu.node_rank = MPIR_Process.local_rank;
     ipc_handle->gpu.offset = (uintptr_t) ipc_attr->u.gpu.vaddr - (uintptr_t) pbase;
-    ipc_handle->gpu.handle_status = handle_status;
 
     if (req && MPIR_CVAR_CH4_IPC_GPU_HANDLE_CACHE == MPIR_CVAR_CH4_IPC_GPU_HANDLE_CACHE_disabled) {
         /* needed in MPIDI_GPU_send_complete */
@@ -479,10 +475,6 @@ int MPIDI_GPU_ipc_handle_map(MPIDI_GPU_ipc_handle_t handle, int map_dev_id, void
 
     bool need_cache;
     need_cache = (MPIR_CVAR_CH4_IPC_GPU_HANDLE_CACHE == MPIR_CVAR_CH4_IPC_GPU_HANDLE_CACHE_generic);
-    if (need_cache && handle.handle_status == MPIDI_GPU_IPC_HANDLE_REMAP_REQUIRED) {
-        mpi_errno = ipc_mapped_cache_delete((void *) handle.remote_base_addr, handle.node_rank);
-        MPIR_ERR_CHECK(mpi_errno);
-    }
 
     void *pbase = NULL;
     if (need_cache) {
