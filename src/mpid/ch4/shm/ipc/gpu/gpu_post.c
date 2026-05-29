@@ -179,15 +179,16 @@ static int ipc_track_cache_remove(const void *addr)
 
 /* -- mapped_track_tree -- */
 
-static int ipc_mapped_cache_search(const void *remote_addr, int remote_rank, int device_id,
-                                   void **mapped_base_addr_out)
+static int ipc_mapped_cache_search(const void *remote_addr, int remote_rank,
+                                   MPL_gpu_ipc_mem_handle_t remote_ipc_handle,
+                                   int device_id, void **mapped_base_addr_out)
 {
     struct MPIDI_GPUI_map_cache_entry *entry;
     struct map_key key;
 
     memset(&key, 0, sizeof(key));
     key.remote_rank = remote_rank;
-    key.remote_addr = remote_addr;
+    key.remote_ipc_handle = remote_ipc_handle;
     HASH_FIND(hh, MPIDI_GPUI_global.ipc_map_cache, &key, sizeof(struct map_key), entry);
 
     if (entry) {
@@ -202,8 +203,9 @@ static int ipc_mapped_cache_search(const void *remote_addr, int remote_rank, int
     return MPI_SUCCESS;
 }
 
-static int ipc_mapped_cache_insert(const void *remote_addr, int remote_rank, int device_id,
-                                   const void *mapped_base_addr)
+static int ipc_mapped_cache_insert(const void *remote_addr, int remote_rank,
+                                   MPL_gpu_ipc_mem_handle_t remote_ipc_handle,
+                                   int device_id, const void *mapped_base_addr)
 {
     int mpi_errno = MPI_SUCCESS;
 
@@ -214,7 +216,7 @@ static int ipc_mapped_cache_insert(const void *remote_addr, int remote_rank, int
 
     memset(&key, 0, sizeof(key));
     key.remote_rank = remote_rank;
-    key.remote_addr = remote_addr;
+    key.remote_ipc_handle = remote_ipc_handle;
     HASH_FIND(hh, MPIDI_GPUI_global.ipc_map_cache, &key, sizeof(struct map_key), entry);
 
     if (entry) {
@@ -226,7 +228,7 @@ static int ipc_mapped_cache_insert(const void *remote_addr, int remote_rank, int
         entry = MPL_malloc(entry_size, MPL_MEM_OTHER);
         memset(entry, 0, entry_size);
         entry->key.remote_rank = remote_rank;
-        entry->key.remote_addr = remote_addr;
+        entry->key.remote_ipc_handle = remote_ipc_handle;
         entry->mapped_addrs[device_id] = mapped_base_addr;
         HASH_ADD(hh, MPIDI_GPUI_global.ipc_map_cache, key, sizeof(struct map_key), entry,
                  MPL_MEM_SHM);
@@ -235,7 +237,8 @@ static int ipc_mapped_cache_insert(const void *remote_addr, int remote_rank, int
     return mpi_errno;
 }
 
-static int ipc_mapped_cache_delete(const void *remote_addr, int remote_rank)
+static int ipc_mapped_cache_delete(const void *remote_addr, int remote_rank,
+                                   MPL_gpu_ipc_mem_handle_t remote_ipc_handle)
 {
     int mpi_errno = MPI_SUCCESS;
     struct MPIDI_GPUI_map_cache_entry *entry;
@@ -246,7 +249,7 @@ static int ipc_mapped_cache_delete(const void *remote_addr, int remote_rank)
 
     memset(&key, 0, sizeof(key));
     key.remote_rank = remote_rank;
-    key.remote_addr = remote_addr;
+    key.remote_ipc_handle = remote_ipc_handle;
     HASH_FIND(hh, MPIDI_GPUI_global.ipc_map_cache, &key, sizeof(struct map_key), entry);
 
     if (entry) {
@@ -479,8 +482,8 @@ int MPIDI_GPU_ipc_handle_map(MPIDI_GPU_ipc_handle_t handle, int map_dev_id, void
     void *pbase = NULL;
     if (need_cache) {
         mpi_errno =
-            ipc_mapped_cache_search((void *) handle.remote_base_addr, handle.node_rank, map_dev_id,
-                                    &pbase);
+            ipc_mapped_cache_search((void *) handle.remote_base_addr, handle.node_rank,
+                                    handle.ipc_hadle, map_dev_id, &pbase);
         MPIR_ERR_CHECK(mpi_errno);
 
         if (pbase) {
@@ -507,8 +510,8 @@ int MPIDI_GPU_ipc_handle_map(MPIDI_GPU_ipc_handle_t handle, int map_dev_id, void
 
     if (need_cache) {
         mpi_errno =
-            ipc_mapped_cache_insert((void *) handle.remote_base_addr, handle.node_rank, map_dev_id,
-                                    pbase);
+            ipc_mapped_cache_insert((void *) handle.remote_base_addr, handle.node_rank,
+                                    handle.ipc_hadle, map_dev_id, pbase);
         MPIR_ERR_CHECK(mpi_errno);
     }
 

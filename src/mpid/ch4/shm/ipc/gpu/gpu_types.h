@@ -12,7 +12,7 @@ struct MPIDI_GPUI_map_cache_entry {
     UT_hash_handle hh;
     struct map_key {
         int remote_rank;
-        const void *remote_addr;
+        MPL_gpu_ipc_mem_handle_t remote_ipc_handle;
     } key;
     const void *mapped_addrs[]; /* array of base addresses indexed by device id */
 };
