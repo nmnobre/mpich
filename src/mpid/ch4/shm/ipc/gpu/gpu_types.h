@@ -20,17 +20,10 @@ struct MPIDI_GPUI_map_cache_entry {
     } mapped[];                 /* array of local base addresses and remote buffer ids indexed by device id */
 };
 
-struct MPIDI_GPUI_handle_cache_entry {
-    UT_hash_handle hh;
-    const void *base_addr;
-    MPL_gpu_ipc_mem_handle_t handle;
-};
-
 typedef struct {
     int local_device_count;
     int initialized;
     struct MPIDI_GPUI_map_cache_entry *ipc_map_cache;
-    struct MPIDI_GPUI_handle_cache_entry *ipc_handle_cache;
 } MPIDI_GPUI_global_t;
 
 extern MPIDI_GPUI_global_t MPIDI_GPUI_global;
